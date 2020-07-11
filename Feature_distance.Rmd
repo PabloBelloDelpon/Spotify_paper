@@ -1,0 +1,196 @@
+---
+title: "Feature-based distance"
+author: "Pablo Bello"
+date: "7/8/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r}
+library(ggthemes)
+```
+
+############################################################
+############### FEATURE DISTANCE EVOLUTION #################
+############################################################
+
+```{r}
+load("~/Desktop/Spotify/Data/spotify_complete.RData")
+
+spotify_data  <- 
+  spotify_complete %>% 
+  left_join(regions, by = "country") %>% 
+  relocate (countries) %>% 
+  rename(country_id = country,
+          country = countries)
+
+means <- spotify_data %>% 
+group_by (country, date) %>% 
+summarise_at(vars(track_danceability:track_duration_ms),mean, na.rm = TRUE) %>%
+mutate_at(vars(track_danceability:track_duration_ms), scale)
+
+#--- Dividing the dataframe by days 
+days <- 
+  means %>% 
+  group_by(date) %>% 
+  group_split()
+
+
+#--- Dataframe with rownames ---#
+features_daily <- mclapply(days, function(i){
+  
+chart_numeric <- i %>% select (-country, -date)
+chart_numeric <- as.data.frame(chart_numeric)
+rownames(chart_numeric) <- i$country
+names(chart_numeric) <- i[["date"]][[1]] # Name the data-frame with the date
+return(chart_numeric)
+  
+})
+
+
+
+euclidean_metrics <- mclapply (features_daily, function(i){
+date <- names(i)[1]
+matrix <- dist(i, method = "euclidean")
+n <- dim(matrix)[1]
+N <- n * (n -1) /2 #Number of elements on the lower triangle of the matrix
+df <- tibble (n = N, mean = mean(matrix) , sd = sd(matrix), date = date) %>% 
+   mutate (se = sd / sqrt(n))
+
+return(df)
+})
+
+
+
+euclidean_df <- bind_rows(euclidean_metrics) %>% 
+  relocate(date) %>% 
+  mutate(date = as.Date(date),
+         lower_ci = mean - 1.96*se,
+         upper_ci = mean + 1.96*se,
+         var = sqrt(sd)) %>% 
+  arrange(date)
+
+
+
+feature_plot_1 <- euclidean_df %>% 
+mutate (mean = rollmean(x = mean, k = 7,  fill = NA)) %>%
+ggplot(aes(date, mean))+
+  geom_line() +  
+  geom_ribbon(aes(ymax = upper_ci , ymin = lower_ci), alpha = 0.6) +
+  labs (title = "Feature-based Distance") 
+ 
+
+
+
+feature_plot_2 <- euclidean_df %>% 
+mutate (var = rollmean(x = var, k = 7,  fill = NA)) %>%
+ggplot(aes(date, sd))+
+  geom_line() +  
+  labs (title = "Variance feature-based Distance")
+       
+
+
+```
+
+``` {r}
+############################################################
+######## For countries with complete observations ##########
+############################################################
+
+means_complete <- spotify_data %>% 
+filter(country %in% countries_comp_200) %>% #Only countries with complete observations
+group_by (country, date) %>% 
+summarise_at(vars(track_danceability:track_duration_ms),mean, na.rm = TRUE) %>%
+mutate_at(vars(track_danceability:track_duration_ms), scale)
+
+#--- Dividing the dataframe by days 
+days_complete <- 
+  means_complete %>% 
+  group_by(date) %>% 
+  group_split()
+
+
+#--- Dataframe with rownames ---#
+features_daily_complete <- mclapply(days_complete, function(i){
+  
+chart_numeric <- i %>% select (-country, -date)
+chart_numeric <- as.data.frame(chart_numeric)
+rownames(chart_numeric) <- i$country
+names(chart_numeric) <- i[["date"]][[1]] # Name the data-frame with the date
+return(chart_numeric)
+  
+})
+
+
+
+euclidean_metrics_complete <- mclapply (features_daily_complete, function(i){
+date <- names(i)[1]
+matrix <- dist(i, method = "euclidean")
+n <- dim(matrix)[1]
+N <- n * (n -1) /2 #Number of elements on the lower triangle of the matrix
+df <- tibble (n = N, mean = mean(matrix) , sd = sd(matrix), date = date) %>% 
+   mutate (se = sd / sqrt(n))
+
+return(df)
+})
+
+
+
+euclidean_df_complete <- bind_rows(euclidean_metrics_complete) %>% 
+  relocate(date) %>% 
+  mutate(date = as.Date(date),
+         lower_ci = mean - 1.96*se,
+         upper_ci = mean + 1.96*se) %>% 
+  arrange(date)
+
+
+(feature_plot_1_complete <- euclidean_df_complete %>% 
+ggplot(aes(date, mean))+
+  geom_line() +  
+  geom_ribbon(aes(ymax = upper_ci , ymin = lower_ci), alpha = 0.6) +
+  labs (title = "Mean Euclidean Distance",
+        subtitle = "Countries with complete observations"))
+
+(feature_plot_1_roll_complete <- euclidean_df_complete %>% 
+mutate (mean = rollmean(x = mean, k = 7,  fill = NA)) %>%
+ggplot(aes(date, mean))+
+  geom_line() +  
+  geom_ribbon(aes(ymax = upper_ci , ymin = lower_ci), alpha = 0.6) +
+  labs (title = "Mean Euclidean Distance",
+         subtitle = "Countries with complete observations"))
+
+(feature_plot_2_complete <- euclidean_df_complete %>% 
+ggplot(aes(date, sd))+
+  geom_line() +  
+  labs (title = "SD Euclidean Distance",
+        subtitle = "Countries with complete observations"))
+
+(feature_plot_2_roll_complete <- euclidean_df_complete %>% 
+mutate (sd = rollmean(x = sd, k = 7,  fill = NA)) %>%
+ggplot(aes(date, sd))+
+  geom_line() +  
+  labs (title = "SD Euclidean Distance",
+         subtitle = "Countries with complete observations"))
+
+```
+
+
+
+
+```{r}
+##################################################################
+############### FINAL PLOTS FOR FEATURE DISTANCE #################
+##################################################################
+
+
+figure_3 <-  plot_grid (plot_1, feature_plot_1, feature_plot_2, title = "Evolution of feature distance", labels = "AUTO" )
+
+feature_distance_complete <-  plot_grid (plot_a, feature_plot_1_roll_complete, feature_plot_2_roll_complete, title = "Evolution of feature distance")
+```
+
+
+

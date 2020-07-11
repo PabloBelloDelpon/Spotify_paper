@@ -1,0 +1,1074 @@
+---
+title: "Evolution of diversity in music"
+author: "Pablo Bello"
+date: "6/28/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(tidyverse)
+library(dplyr)
+library(cluster)
+library(explor)
+library(WVPlots)
+library(parallel)
+library(pbmcapply)
+library(zoo)
+library(lubridate)
+```
+
+
+
+
+######################################################
+############### EVOLUTION OF DIVERSITY ###############
+######################################################
+
+
+```{r}
+#---Loading and Preparing the data---#
+load("~/Desktop/Spotify/Data/spotify_charts.RData")
+
+regions <- spotifycharts::chart_regions() %>% 
+  filter(countries != "Andorra", countries != "Cyprus",countries != "Luxembourg", countries != "Latvia",countries != "Monaco",countries != "Malta") %>% 
+  rename(country = countrycodes)
+
+#---Assigned clusters from the hierarchical clustering 
+load("~/Desktop/Spotify/clusters.RData")
+clusters <- as.data.frame(clusters_ward)
+clusters$country <- rownames(clusters)
+clusters <- tibble(clusters)
+
+
+
+spotify_charts <- 
+  spotify_charts %>% 
+  left_join(regions, by = "country") %>% 
+  relocate (countries) %>% 
+  rename(country_id = country,
+          country = countries)
+  
+
+```
+
+``` {r}
+########################################################################
+##################### DEFINING GROUPS OF COUNTRIES #####################
+########################################################################
+
+
+##### Time span for each country (with 200 entries on the list) #####
+time_spans <- spotify_charts %>% 
+  group_by(country,date) %>% 
+  summarise (n = n()) %>% 
+  filter(n == 200) %>% 
+  summarise (start = as.Date(min(date)), end = as.Date(max(date))) %>% 
+  mutate (diff = difftime(end,start)) %>% 
+  mutate(country = fct_reorder(country, diff))
+  
+
+plot_1 <- ggplot(time_spans, aes(country, color = country)) +
+  geom_linerange(aes(ymin = start, ymax = end)) +
+  coord_flip () +
+  labs (title = "Time Spans for top 200") +
+  theme(legend.position = "none",
+        axis.text=element_text(size=6))
+
+
+#---List of Countries with observations for the whole period (independently on the number of entries per day)
+
+countries_comp <- 
+  spotify_charts %>% 
+  group_by(country,date) %>% 
+  summarise (n = n()) %>% 
+  summarise (start = as.Date(min(date)), end = as.Date(max(date))) %>% 
+  filter(start == as.Date("2017-01-01") & end == as.Date("2020-06-20")) %>% 
+  pull (country)
+
+#--- List of countries with observations for the whole period and 200 songs per day
+countries_comp_200 <-  
+  spotify_charts %>% 
+  count (country) %>% 
+  filter (n >= 250000) %>% 
+  pull(country)
+
+
+#--- Countries with incomplete observations
+countries_incomplete <- 
+  spotify_charts %>% 
+  count (country) %>% 
+  filter (!country %in% countries_comp_200) %>% 
+  pull(country)
+
+#--- Latin-american cluster
+countries_latin <-
+  clusters %>% 
+  filter(clusters_ward == 1) %>% 
+  pull(country)
+
+#--- Western cluster
+countries_west <-
+  clusters %>% 
+  filter(clusters_ward == 2) %>% 
+  pull(country)
+
+#--- Asian clsuter
+countries_asia <-
+  clusters %>% 
+  filter(clusters_ward == 3) %>% 
+  pull(country)
+
+
+
+#---- Time spans plot for countries with complete observations 
+time_spans_complete <- spotify_charts %>% 
+  filter(country %in% countries_comp_200) %>% 
+  group_by(country,date) %>% 
+  summarise (n = n()) %>% 
+  filter(n == 200) %>% 
+  summarise (start = as.Date(min(date)), end = as.Date(max(date))) %>% 
+  mutate (diff = difftime(end,start)) %>% 
+  mutate(country = fct_reorder(country, diff))
+
+plot_a <- ggplot(time_spans_complete, aes(country, color = country)) +
+  geom_linerange(aes(ymin = start, ymax = end)) +
+  coord_flip () +
+  labs (title = "Countries with complete observations") +
+  theme(legend.position = "none",
+        axis.text=element_text(size=6))
+
+
+
+#---- Time spans plot for Latin-American Cluster
+time_spans_latin <- spotify_charts %>% 
+  filter(country %in% countries_latin) %>% 
+  group_by(country,date) %>% 
+  summarise (n = n()) %>% 
+  filter(n == 200) %>% 
+  summarise (start = as.Date(min(date)), end = as.Date(max(date))) %>% 
+  mutate (diff = difftime(end,start)) %>% 
+  mutate(country = fct_reorder(country, diff))
+
+plot_latin_1 <- ggplot(time_spans_latin, aes(country, color = country)) +
+  geom_linerange(aes(ymin = start, ymax = end)) +
+  coord_flip () +
+  labs (title = "Latin-American Cluster",
+        subtitle = "Period with complete charts") +
+  theme(legend.position = "none",
+        axis.text=element_text(size=8))
+
+
+#---- Time spans plot for Asian Cluster
+time_spans_asia <- spotify_charts %>% 
+  filter(country %in% countries_asia) %>% 
+  group_by(country,date) %>% 
+  summarise (n = n()) %>% 
+  filter(n == 200) %>% 
+  summarise (start = as.Date(min(date)), end = as.Date(max(date))) %>% 
+  mutate (diff = difftime(end,start)) %>% 
+  mutate(country = fct_reorder(country, diff))
+
+plot_asia_1 <- ggplot(time_spans_asia, aes(country, color = country)) +
+  geom_linerange(aes(ymin = start, ymax = end)) +
+  coord_flip () +
+  labs (title = "Asian Cluster",
+        subtitle = "Period with complete charts") +
+  theme(legend.position = "none",
+        axis.text=element_text(size=8))
+
+
+#---- Time spans plot for Western  Cluster
+time_spans_west <- spotify_charts %>% 
+  filter(country %in% countries_west) %>% 
+  group_by(country,date) %>% 
+  summarise (n = n()) %>% 
+  filter(n == 200) %>% 
+  summarise (start = as.Date(min(date)), end = as.Date(max(date))) %>% 
+  mutate (diff = difftime(end,start)) %>% 
+  mutate(country = fct_reorder(country, diff))
+
+plot_west_1 <- ggplot(time_spans_west, aes(country, color = country)) +
+  geom_linerange(aes(ymin = start, ymax = end)) +
+  coord_flip () +
+  labs (title = "Western Cluster",
+        subtitle = "Period with complete charts") +
+  theme(legend.position = "none",
+        axis.text=element_text(size=8))
+
+```
+
+
+
+#######################################################
+################### GAMMA DIVERSITY ###################
+#######################################################
+
+
+``` {r}
+############ For all the countries
+##### Numer and proportion of unique songs each day #####
+diversity <- spotify_charts %>%
+  mutate(date = as.Date(date)) %>% 
+  group_by(date) %>% 
+  summarise(unique = n_distinct(track_id), n = n()) %>% 
+  mutate(diversity = unique/n) 
+
+
+plot_2 <- diversity %>% 
+    mutate (diversity = rollmean(x = diversity, k = 7,  fill = NA)) %>% 
+ggplot(aes(date,diversity))+
+  geom_line() +
+  labs (title = "Diversity of Songs on the charts",
+        subtitle = "Gamma Diversity",
+        y = "Proportion of unique songs", 
+        x = "")
+
+
+
+  
+############ Countries with observations for the whole period
+
+#--- Diversity of songs on those countries
+diversity_2 <- spotify_charts %>%
+  filter(country %in% countries_comp_200) %>% 
+  mutate(date = as.Date(date)) %>% 
+  group_by(date) %>% 
+  summarise(unique = n_distinct(track_id), n = n()) %>% 
+  mutate(diversity = unique/n) 
+ 
+
+#---Plot for countries with complete data
+plot_x <- diversity_2 %>% 
+mutate (diversity = rollmean(x = diversity, k = 7,  fill = NA)) %>% 
+ggplot(aes(date,diversity))+
+  geom_line() +
+  labs (title = "Diversity of Songs on the charts(Gamma Diversity)",
+        subtitle = "Countries with complete charts")
+
+
+
+#########  Latin-american cluster
+diversity_latin <- spotify_charts %>%
+  filter(country %in% countries_latin) %>% 
+  mutate(date = as.Date(date)) %>% 
+  group_by(date) %>% 
+  summarise(unique = n_distinct(track_id), n = n()) %>% 
+  mutate(diversity = unique/n) 
+ 
+
+plot_latin_2 <- diversity_latin %>% 
+mutate (diversity = rollmean(x = diversity, k = 7,  fill = NA)) %>% 
+ggplot(aes(date,diversity))+
+  geom_line() +
+  labs (title = "Gamma Diversity Latin-american cluster")
+
+
+#########  Asian cluster
+diversity_asian <- spotify_charts %>%
+  filter(country %in% countries_asia) %>% 
+  mutate(date = as.Date(date)) %>% 
+  group_by(date) %>% 
+  summarise(unique = n_distinct(track_id), n = n()) %>% 
+  mutate(diversity = unique/n) 
+ 
+
+plot_asian_2 <- diversity_asian %>% 
+mutate (diversity = rollmean(x = diversity, k = 7,  fill = NA)) %>% 
+ggplot(aes(date,diversity))+
+  geom_line() +
+  labs (title = "Gamma Diversity Asian cluster")
+
+#########  Western cluster
+diversity_west <- spotify_charts %>%
+  filter(country %in% countries_west) %>% 
+  mutate(date = as.Date(date)) %>% 
+  group_by(date) %>% 
+  summarise(unique = n_distinct(track_id), n = n()) %>% 
+  mutate(diversity = unique/n) 
+ 
+
+plot_west_2 <- diversity_west %>% 
+mutate (diversity = rollmean(x = diversity, k = 7,  fill = NA)) %>% 
+ggplot(aes(date,diversity))+
+  geom_line() +
+  labs (title = "Gamma Diversity Western cluster")
+
+```
+
+
+
+```{r}
+############## DIVERSITY OF ARTISTS #################
+
+##### Number of distinct artists each day #####
+diversity_artists <- spotify_charts %>%
+  mutate(date = as.Date(date)) %>% 
+  group_by(date) %>% 
+  summarise(unique = n_distinct(artist), n = n()) %>% 
+  mutate(diversity = unique/n)
+
+
+plot_3 <- diversity_artists %>% 
+mutate (diversity = rollmean(x = diversity, k = 7,  fill = NA)) %>% 
+ggplot(aes(date,diversity))+
+  geom_line() +  
+  labs (title = "Diversity of Artists on the charts",
+        y = "Proportion of different artists",
+        x = "")
+
+
+############ Countries with observations for the whole period
+
+diversity_artists_y <- spotify_charts %>%
+  filter(country %in% countries_comp_200) %>% 
+  mutate(date = as.Date(date)) %>% 
+  group_by(date) %>% 
+  summarise(unique = n_distinct(artist), n = n()) %>% 
+  mutate(diversity = unique/n)
+
+plot_y <- diversity_artists_y %>% 
+mutate (diversity = rollmean(x = diversity, k = 7,  fill = NA)) %>% 
+ggplot(aes(date,diversity))+
+  geom_line() +  
+  labs (title = "Diversity of Artists on the charts",
+         subtitle = "Countries with complete observations",
+        y = "Proportion of different artists",
+        x = "")
+
+
+```
+
+
+
+``` {r}
+
+############## DIVERSITY OF LABELS #################
+
+load("~/Desktop/Spotify/Data/spotify_complete.RData")
+
+labels <- spotify_complete %>% 
+  select(track_id, album_label)
+ 
+
+labels_2 <- 
+  labels %>% 
+  distinct(track_id, .keep_all = TRUE) %>% 
+    separate(col = album_label, sep = "/",
+             into = c("label_1", "label_2" , "label_3"),
+             extra = "merge", fill = "right") 
+
+
+
+#---- Group labels 
+labels_2$label_1[str_which(pattern = regex("^universal", ignore_case = TRUE),string = labels_2$label_1)] <- "Universal"
+
+labels_2$label_1[str_which(pattern = regex("^columbia", ignore_case = TRUE),string = labels_2$label_1)] <- "Columbia"
+
+labels_2$label_1[str_which(pattern = regex("^sony", ignore_case = TRUE),string = labels_2$label_1)] <-
+  "Sony"
+
+labels_2$label_1[str_which(pattern = regex("^WM ", ignore_case = TRUE),string = labels_2$label_1)] <- "Warner"
+
+labels_2$label_1[str_which(pattern = regex("warner", ignore_case = TRUE),string = labels_2$label_1)] <- "Warner"
+
+labels_2$label_1[str_which(pattern = regex("^RCA ", ignore_case = TRUE),string = labels_2$label_1)] <- "RCA"
+
+labels_2$label_1[str_which(pattern = regex("^epic", ignore_case = TRUE),string = labels_2$label_1)] <- "Epic"
+
+labels_2$label_1[str_which(pattern = regex("^atlantic", ignore_case = TRUE),string = labels_2$label_1)] <- "Atlantic"
+
+#######################
+
+#--- Join to the labels data to the spotify_charts data
+charts_labels <- spotify_charts %>% 
+  left_join(labels_2, by = "track_id")
+
+
+
+#--- Diversity within country
+#Number of unique labels that have a song on the top 200 on a given day and a particular country
+
+diversity_labels_countries <- 
+  charts_labels %>% 
+  group_by(country, date) %>% 
+  summarise(unique = n_distinct(label_1), n = n()) %>% 
+  mutate(diversity = unique/n)
+
+
+plot_labels_1 <- 
+  diversity_labels_countries %>% 
+  mutate(date = as.Date(date),
+         diversity = rollmean(diversity, k = 7, fill = NA)) %>% 
+ggplot(aes(date,diversity)) +
+  geom_line () +
+  facet_wrap(~ country, scale = "free_y")
+
+
+#--- Diversity across countries
+#Global diversity of record labels. The number of unique labels that have a top200 hit on a given day in any country
+diversity_labels_world <- 
+  charts_labels %>% 
+  group_by(date) %>% 
+  summarise(unique = n_distinct(label_1), n = n()) %>% 
+  mutate(diversity = unique/n)
+
+
+plot_labels_2 <- 
+  diversity_labels_world %>% 
+  mutate(date = as.Date(date),
+         diversity = rollmean(diversity, k = 7, fill = NA)) %>% 
+ggplot(aes(date,diversity)) +
+  geom_line () +
+  labs (title = "Labels with a song charts")
+
+
+#---- Diversity across countries (with complete observations)
+#Same as before but only for countries that have complete observations
+diversity_labels_world_complete <- 
+  charts_labels %>% 
+  filter(country %in% countries_comp_200) %>% 
+  group_by(date) %>% 
+  summarise(unique = n_distinct(label_1), n = n()) %>% 
+  mutate(diversity = unique/n)
+
+
+plot_labels_2_complete <- 
+  diversity_labels_world_complete %>% 
+  mutate(date = as.Date(date),
+         diversity = rollmean(diversity, k = 7, fill = NA)) %>% 
+ggplot(aes(date,diversity)) +
+  geom_line () +
+  labs (title = "Unique labels with a song on the top charts",
+        subtitle = "Countries with complete charts")
+
+
+
+#---- GINI coefficients
+#Inequality on the distribution of number of songs on the chart on a given day (worldwide)
+library(DescTools)
+
+gini_coeffs <- 
+  charts_labels %>% 
+  group_by (date) %>% 
+  count (label_1, sort = TRUE) %>% 
+  arrange(date) %>% 
+  group_by (date) %>% 
+  summarise(gini = Gini(n))
+
+
+plot_labels_3 <- 
+  gini_coeffs %>% 
+  mutate(date = as.Date(date),
+         gini = rollmean(gini, k = 7 , fill = NA))  %>% 
+ggplot (aes(date,gini))+
+  geom_line() +
+  labs (title = "Gini Coefficient Labels",
+        x = "",
+        y =  "Gini")
+
+  
+#---GINI coefficient for countries with complete observations 
+gini_coeffs_complete <- 
+  charts_labels %>%
+  filter(country %in% countries_comp_200) %>% 
+  group_by (date) %>% 
+  count (label_1, sort = TRUE) %>% 
+  arrange(date) %>% 
+  group_by (date) %>% 
+  summarise(gini = Gini(n))
+
+
+plot_labels_3_complete <- 
+  gini_coeffs_complete %>% 
+  mutate(date = as.Date(date),
+         gini = rollmean(gini, k = 7 , fill = NA))  %>% 
+ggplot (aes(date,gini))+
+  geom_line() +
+  labs (title = "Gini Coefficient for the distribution of labels on the top charts",
+        subtitle = "Countries with complete charts")
+
+#--- Market share for the big labels
+big_3 <- charts_labels %>%
+  count(label_1, sort = TRUE) %>% 
+   mutate(freq = n / sum(n)) %>% 
+  slice (1:10) %>% 
+  pull(label_1) 
+
+
+share_big_labels <- 
+  charts_labels %>% 
+  filter(country %in% countries_comp_200) %>% 
+  mutate (label = as_factor(ifelse (label_1 %in% big_3 == TRUE,1, 0)),
+          date = as.Date(date),
+          label = fct_recode(label , "Big_label" = "1" , "Indie" = "0")) %>% 
+  group_by (date) %>% 
+  count(label) 
+
+
+plot_labels_4 <-
+  share_big_labels %>% 
+  mutate(date = as.Date(date)) %>% 
+  group_by (label) %>% 
+        mutate(n_2 = rollmean (n, k = 7 , fill = NA)) %>% 
+  ggplot (aes(date, n_2, color = label)) +
+    geom_line() +
+  labs(title = "Songs on the charts by day",
+       subtitle = "Sony, Warner and Universal vs the rest",
+       y = "Songs",
+       color = "Label")
+
+#--- By number of streams
+
+streams_big_labels <- 
+  charts_labels %>% 
+  filter(country %in% countries_comp_200) %>% 
+  mutate (label = as_factor(ifelse (label_1 %in% big_3 == TRUE,1,0)),
+          label = fct_recode(label , "Big_label" = "1" , "Indie" = "0"),
+          date = as.Date(date)) %>% 
+  group_by (date,label) %>% 
+  summarise (sum(streams))
+
+
+plot_labels_5 <- 
+  streams_big_labels %>% 
+  rename(streams = `sum(streams)`) %>% 
+  group_by (date) %>%
+  mutate (perc = streams / sum(streams)) %>% 
+  group_by (label) %>% 
+  mutate(perc_rolled= rollmean (perc, k = 10 , fill = NA)) %>% 
+  ggplot (aes(date, perc_rolled, color = label)) +
+    geom_line() +
+   labs(title = "Streams by day",
+       subtitle = "Sony, Warner and Universal vs the rest",
+       y = "% Streams",
+       color = "Label")
+ 
+
+```
+
+
+
+#######################################################
+################### BETA DIVERSITY ####################
+#######################################################
+
+
+
+```{r}
+########  DATA PREPARATION ######## 
+
+#--- Dividing the dataframe by days and transforming the data into a wide format ---#
+daily_charts <- spotify_charts %>% 
+  select(country,track_id, date) %>% 
+  group_split(date)
+
+
+daily_charts_wide <- mclapply(daily_charts, function(i){
+  
+  chart_wide <- i %>% 
+  mutate(n = 1) %>% 
+  pivot_wider(names_from = track_id, values_from = n) %>% 
+  mutate(across(everything(), replace_na, 0)) 
+  
+  #--- Dataframe with rownames ---#
+chart_numeric <- chart_wide %>% select (-country, -date)
+chart_numeric <- as.data.frame(chart_numeric)
+rownames(chart_numeric) <- chart_wide$country
+
+
+return(chart_numeric)
+  
+})
+
+load("~/Desktop/Spotify/Data/daily_charts_wide.RData")
+
+#sum(sapply(daily_charts_wide, class) != "data.frame")
+
+d_charts <- daily_charts_wide[(sapply(daily_charts_wide, function(i) class (i[1,1])) == "numeric")]
+
+
+
+####### For countries with complete observations
+
+daily_charts_complete <- spotify_charts %>% 
+  filter(country %in% countries_comp_200) %>% 
+  select(country,track_id, date) %>% 
+  group_split(date)
+
+
+daily_charts_wide_complete <- mclapply(daily_charts_complete, function(i){
+  
+  chart_wide <- i %>% 
+  mutate(n = 1) %>% 
+  pivot_wider(names_from = track_id, values_from = n) %>% 
+  mutate(across(everything(), replace_na, 0)) 
+  
+  #--- Dataframe with rownames ---#
+chart_numeric <- chart_wide %>% select (-country, -date)
+chart_numeric <- as.data.frame(chart_numeric)
+rownames(chart_numeric) <- chart_wide$country
+
+
+return(chart_numeric)
+  
+})
+
+#sum(sapply(daily_charts_wide_complete, class) != "data.frame")
+d_charts_complete <-  daily_charts_wide_complete[(sapply(daily_charts_wide_complete, function(i) class (i[1,1])) == "numeric")]
+
+```
+
+
+
+```{r}
+##### SORENSEN'S MULTIPLE-SITE DISSIMILARITY INDEX #####
+library("betapart")
+
+sor_index <- sapply (d_charts, function(i){
+beta.multi(x = i, index.family = "sor")$beta.SOR # x = data frame, where rows are sites and columns are species
+} )
+
+
+plot_4 <- tibble(sor_index) %>% 
+bind_cols (date = seq(as.Date("2017/1/1"), as.Date("2020/6/13"), "days")) %>% 
+mutate (sor_index = rollmean(x = sor_index, k = 7,  fill = NA)) %>% 
+ggplot(aes(date,sor_index))+
+  geom_line() +  
+  labs (title = "Sorensen's Dissimilarity Measure",
+        subtitle = "Beta Diversity",
+        x = "",
+        y = "Sorensen's Dissimilarity")
+
+
+####### For countries with complete observations
+sor_index_complete <- sapply (d_charts_complete, function(i){
+beta.multi(x = i, index.family = "sor")$beta.SOR # x = data frame, where rows are sites and columns are species
+} )
+
+plot_z <- tibble(sor_index_complete) %>% 
+bind_cols (date = seq(as.Date("2017/1/1"), as.Date("2020/6/14"), "days")) %>% 
+mutate (sor_index = rollmean(x = sor_index_complete, k = 7,  fill = NA)) %>% 
+ggplot(aes(date,sor_index))+
+  geom_line() +  
+  labs (title = "Evolution of Sorensen's Dissimilarity Measure (Beta Diversity)",
+        subtitle = "Countries with complete observations")
+
+```
+
+
+```{r}
+##### MEAN JACCARD DISTANCE  #####
+
+jacc_index <- mclapply (d_charts, function(i){
+matrix <- philentropy::distance(i, method = "jaccard", use.row.names = TRUE,diag = FALSE,upper = FALSE)
+df <- tibble(value = matrix[lower.tri(matrix)]) #---Extracting lower triangle from matrix(without diagonal)
+return(df)
+})
+
+
+jacc_index_metrics <- mclapply(jacc_index, function(i) {
+  i %>%  
+    summarise (n = n (),mean =  mean(value), sd = sd (value)) %>% 
+    mutate (se = sd / sqrt(n)) 
+})
+                            
+jacc_index_df <- bind_rows(jacc_index_metrics) %>% 
+    bind_cols (date = seq(as.Date("2017/1/1"), as.Date("2020/6/13"), "days"))
+
+
+
+plot_5 <- jacc_index_df %>% 
+mutate (mean = rollmean(x = mean, k = 7,  fill = NA)) %>% 
+ggplot(aes(date, mean))+
+  geom_line() +  
+  geom_ribbon(aes(ymax = mean + se , ymin = mean - se), alpha = 0.6) +
+  labs (title = "Mean Jaccard Distance",
+        subtitle = "Beta Diversity",
+        x = "", 
+        y = "Jaccard Distance")
+
+
+####### For countries with complete observations
+
+jacc_index_complete <- mclapply (d_charts_complete, function(i){
+matrix <- philentropy::distance(i, method = "jaccard", use.row.names = TRUE,diag = FALSE,upper = FALSE)
+df <- tibble(value = matrix[lower.tri(matrix)]) #---Extracting lower triangle from matrix(without diagonal)
+return(df)
+})
+
+
+jacc_index_metrics_complete <- mclapply(jacc_index_complete, function(i) {
+  i %>%  
+    summarise (n = n (),mean =  mean(value), sd = sd (value), var = var(value)) %>% 
+    mutate (se = sd / sqrt(n)) 
+})
+                            
+jacc_index_df_complete <- bind_rows(jacc_index_metrics_complete) %>% 
+    bind_cols (date = seq(as.Date("2017/1/1"), as.Date("2020/6/14"), "days"))
+
+
+
+(plot_b <- jacc_index_df_complete %>% 
+ggplot(aes(date, mean))+
+  geom_line() +  
+  geom_ribbon(aes(ymax = mean + se , ymin = mean - se), alpha = 0.6) +
+  labs (title = "Mean Jaccard Distance Evolution (Beta Diversity)",
+        subtitle = "Countries with complete observations"))
+
+(plot_b_roll <- jacc_index_df_complete %>% 
+mutate (mean = rollmean(x = mean, k = 7,  fill = NA)) %>% 
+ggplot(aes(date, mean))+
+  geom_line() +  
+  geom_ribbon(aes(ymax = mean + se , ymin = mean - se), alpha = 0.6) +
+  labs (title = "Mean Jaccard Distance Evolution (Beta Diversity)",
+        subtitle = "Countries with complete observations"
+        ))
+
+
+#--- Evolution of the variance in the Jaccard Index
+jacc_index_df_complete %>% 
+mutate (var = rollmean(x = var, k = 7,  fill = NA),
+        ) %>% 
+ggplot (aes(date, var)) +
+  geom_line () +
+  labs(title = "Evolution of the variance in Jaccard Index")
+
+```
+
+
+```{r}
+##### FINAL PLOTS  #####
+library(cowplot)
+
+
+figure_1 <- plot_grid(
+                      plot_2 + theme_wsj(base_size = 6, color = "green"),
+                      plot_3+ theme_wsj(base_size = 6, color = "green"),
+                      plot_labels_2 + theme_wsj(base_size = 6, color = "green"),
+                      plot_labels_3 + theme_wsj(base_size = 6),
+                      plot_4 + theme_wsj(base_size = 6),
+                      plot_5 + theme_wsj(base_size = 6),
+                      feature_plot_1 + theme_wsj(base_size = 6, color = "blue"),
+                      feature_plot_2 + theme_wsj(base_size = 6, color = "blue"),
+                      plot_1 + theme_wsj(base_size = 6, color = "blue") + 
+                      theme (legend.position = "none", axis.text.y = element_text(face = "plain", size = 5)),
+                      labels = "AUTO")
+
+
+figure_2 <- plot_grid (plot_labels_4 + theme_wsj (base_size = 10, color = "green"),
+                       plot_labels_5 + theme_wsj (base_size = 10, color = "green"),
+                       labels = "AUTO")
+
+
+figure_3 <- plot_grid (plot_asian_2 + theme_wsj(color = "brown", base_size = 6)
+                       ,plot_west_2 + theme_wsj(color = "blue",  base_size = 6),
+                       plot_latin_2 + theme_wsj(color = "green",  base_size = 6),
+                       labels = "AUTO")
+
+#--- Add a line for changes in the recommendation algorithm
+algorithm_change <- as.Date("2019-03-26")
+plots_complete <- list(plot_a, plot_x_roll , plot_y_roll, plot_z_roll , plot_b_roll, plot_labels_2_complete, plot_labels_3_complete)
+
+
+plots_complete_2 <- 
+lapply (plots_complete, function(x) {
+  x +
+    geom_vline(aes (xintercept = algorithm_change), color = "red", type = "dashed")
+})
+
+plot_grid(plotlist = plots_complete_2)
+
+```
+
+
+
+########################################################
+##############   ALPHA DIVERSITY    ####################
+########################################################
+
+
+```{r}
+#--- Diversity of songs withing countries in a particular time span. It relates to speed of change and not to general diversity (gamma diversity). 
+
+
+#---- Alpha Diversity within a month
+
+alpha_diversity <-  spotify_charts %>%
+  left_join(clusters , by = "country") %>% 
+  mutate(country = fct_reorder(country, clusters_ward)) %>% 
+  filter(country %in% countries_comp_200) %>% #Only countries with complete observations
+  mutate (date = floor_date(as.Date(date), unit = "month")) %>% #Group by months
+  group_by(clusters_ward,country,date) %>%
+  summarise(unique = n_distinct(track_id), n = n()) %>% 
+  mutate(diversity = unique/n) 
+  
+  
+
+#---Mean alpha diversity by country for the whole period
+(plot_alpha_1 <- 
+  alpha_diversity %>% 
+  group_by(country) %>% 
+  summarise(diversity = mean(diversity)) %>% 
+  ggplot(aes(country, sort(diversity,decreasing = TRUE))) +
+  geom_col (fill = "steelblue") +
+  theme (axis.text.x = element_text(angle = 90)) +
+  labs(title = "Alpha Diversity by country",
+       subtitle = "Mean for the period 2017-2020",
+       y = "Diversity",
+       x = "Country"))
+ 
+
+  
+
+#---Alpha Diversity (1 month time span)
+(plot_alpha_2 <- 
+  alpha_diversity %>% 
+  ggplot(aes(date,diversity, color = factor(clusters_ward))) +
+  geom_line() +
+  facet_wrap(~country, scales = "free_y") +
+  labs (title = "Alpha Diversity with time span 1 month",
+        subtitle = "Free y scale") +
+  theme(legend.position = "none"))
+
+
+(plot_alpha_3 <- 
+  alpha_diversity %>% 
+  ggplot(aes(date,diversity, color = factor(clusters_ward))) +
+  geom_line() +
+  facet_wrap(~country) +
+  labs (title = "Alpha Diversity with time span 1 month",
+        subtitle = "Fixed y scale") +
+    theme(legend.position = "none"))
+
+
+#---- Alpha Diversity within a week
+alpha_diversity_week <- 
+  spotify_charts %>%
+  left_join(clusters , by = "country") %>% 
+  mutate(country = fct_reorder(country, clusters_ward)) %>%
+  filter(country %in% countries_comp_200) %>% 
+  mutate (date = floor_date(as.Date(date), unit = "week")) %>% 
+  group_by(clusters_ward,country,date) %>%
+  summarise(unique = n_distinct(track_id), n = n()) %>% 
+  mutate(diversity = unique/n)
+
+
+#---Alpha Diversity within a week
+(plot_alpha_4 <- 
+  alpha_diversity_week %>% 
+  ggplot(aes(date,diversity, color = factor(clusters_ward))) +
+  geom_line() +
+  theme(legend.position = "none")+
+  facet_wrap(~ country, scale = "free_y") +
+  labs (title = "Alpha Diversity with time span 1 week",
+        subtitle = "Free y scale") +
+     theme(legend.position = "none"))
+  
+
+
+#--- Daily entries to the charts
+ #-- How many new songs each day
+daily_movements <- 
+  spotify_charts %>% 
+  aggregate(track_id ~ date + country, ., unique, drop = FALSE) %>% 
+  group_by(country) %>% 
+  arrange(date) %>% 
+  mutate(new_ids = mapply(setdiff, track_id, lag(track_id)),
+         newid = lapply(new_ids, length)) %>% 
+  ungroup() %>% 
+  arrange(date, country) %>% 
+  as.data.frame()
+
+max_ranks <- spotify_charts %>% 
+  group_by(country, date) %>% 
+  summarise(max_rank = max(position)) 
+
+
+
+daily_movements_2 <- 
+  daily_movements %>% 
+  arrange(country) %>% 
+  left_join(max_ranks, by = c("country", "date")) %>% 
+  mutate(entries = unlist(newid),
+         max_rank = replace_na(max_rank,0),
+         perc_new = entries / max_rank) %>% 
+  filter (perc_new != 1, max_rank >= 50) %>% 
+  left_join(clusters , by = "country") %>% 
+  mutate(country = fct_reorder(country, clusters_ward)) 
+
+
+
+
+plot_alpha_5 <- daily_movements_2 %>% 
+  group_by (country) %>% 
+  mutate(date = as.Date(date),
+         entries = rollmean(perc_new, k = 14, fill = NA)) %>% 
+ggplot(aes(date,entries, color = factor(clusters_ward))) +
+  geom_line () +
+  facet_wrap(~ country, scale = "free_y") +
+    labs (title = "Daily percentage of new entries to the chart",
+        subtitle = "Free y scale") +
+     theme(legend.position = "none")
+
+
+################ ALPHA DIVERSITY FINAL PLOTS ################
+
+plot_alpha_1 +
+  theme_wsj(base_size = 8) +
+   theme (axis.text.x = element_text(angle = 90))
+
+plot_alpha_5 +
+  theme_wsj(base_size = 8) +
+    theme(legend.position = "none",
+          strip.text.x = element_text(size = 12, face = "bold"))
+
+```
+
+
+########################################################
+##############   ZETA DIVERSITY    #####################
+########################################################
+
+```{r}
+library(zetadiv)
+
+sample <- seq (1 ,length(d_charts), 120)
+sample_d_charts <- d_charts[sample]
+dates <- seq(as.Date("2017/1/1"), as.Date("2020/6/13"), "days")
+dates_2 <- dates[sample]
+
+zeta_diversity <- pbmclapply (sample_d_charts, function(i){
+
+Zeta.decline.ex(
+i,
+orders = 1:20,
+sd.correct = TRUE,
+confint.level = 0.95,
+sd.plot = TRUE,
+rescale = TRUE,
+empty.row = "empty",
+plot = FALSE
+)
+})
+
+df <- c()
+
+for (i in 1:length(zeta_diversity)) {
+
+  df[[i]] <- tibble (order = zeta_diversity[[i]]$zeta.order,
+                mean = zeta_diversity[[i]]$zeta.val,
+                sd = zeta_diversity[[i]]$zeta.val.sd,
+                date = dates_2[[i]])
+}
+
+
+  
+
+df_2 <- bind_rows(df) %>% 
+  mutate (ci_sup = mean + (1.96 * sd),
+         ci_inf = mean - (1.96 * sd))
+
+
+
+
+zeta_grpah_1 <- df_2 %>% 
+  filter (mean < 0.99) %>% 
+ggplot(aes(order, mean,group = date, colour = date,
+                      fill = date)) +
+  geom_point () +
+  #geom_ribbon(aes(ymin = ci_inf , ymax = ci_sup), alpha = 0.3)+
+  geom_line ()
+
+
+zeta_graph_2 <- df_2 %>% 
+  mutate(order = as_factor(order)) %>% 
+  filter (mean < 0.99) %>% 
+ggplot(aes(date, mean,group = order, colour = order,
+                      fill = order)) +
+  geom_point () +
+  #geom_ribbon(aes(ymin = ci_inf , ymax = ci_sup), alpha = 0.3)+
+  geom_line ()
+
+
+df_2 %>% 
+  filter (mean < 0.99) %>% 
+  group_by(date) %>% 
+  summarise(max = max(mean), min = min(mean)) %>% 
+  mutate(diff = max - min)
+
+
+```
+
+
+
+
+
+############################################################
+#####     PAIRWISE DISTANCES (GLOBAL VERSUS OTHERS)    #####
+############################################################
+
+
+``` {r}
+#--- PAIRWISE DISTANCE (JACCARD) BETWEEN THE GLOBAL CHART AND THE REST ---#
+pair_dist <- mclapply(d_charts, function (i){
+
+  t_charts <- t(i)
+  global <- t_charts[,1]
+  rest <- t_charts[,-1]
+
+  global_dist <- proxy::dist(x = global, y = rest, method="Jaccard", by_rows = FALSE)
+  global_dist_2 <- as_tibble(global_dist[1,] , rownames = NA)
+  global_dist_final <- rownames_to_column(global_dist_2, var = "country")
+  return(global_dist_final)
+})
+
+
+
+pairwise_distances <- bind_rows (pair_dist, .id = "date") %>% 
+  mutate(date = as.numeric(date))
+
+#--- Mean distance between global and other countries
+pairwise_distances %>% 
+  filter (country %in% countries_incomplete) %>%
+  group_by(date) %>% 
+  summarise (n = n (),mean =  mean(value), sd = sd (value)) %>% 
+    mutate (se = sd / sqrt(n)) %>% 
+  mutate(date = seq(as.Date("2017/1/1"), as.Date("2020/6/13"), "days")) %>% 
+  mutate(roll_mean = rollmean(mean , k = 14, fill = NA)) %>% 
+  ggplot(aes(date,roll_mean)) +
+  geom_line () 
+  
+
+ 
+pairwise_distances %>% 
+ filter (country %in% countries_incomplete) %>% 
+  group_by(country) %>% 
+  mutate(jaccard_distance = rollmean(value , k = 14, fill = NA)) %>% 
+  left_join(clusters , by = "country") %>% 
+  mutate(country = fct_reorder(country, clusters_ward)) %>% 
+  ggplot(aes(date, jaccard_distance, color = factor(clusters_ward))) +
+  geom_line() +
+  labs (title = "Jaccard Distance  Between Global and other countries") +
+  facet_wrap(~ country, scales = "free")
+
+
+
+pairwise_distances %>% 
+ filter (country %in% countries_comp_200) %>% 
+  group_by(country) %>% 
+  mutate(jaccard_distance = rollmean(value , k = 14, fill = NA)) %>% 
+  ggplot(aes(date, jaccard_distance)) +
+  geom_line() +
+  labs (title = "Jaccard Distance  Between Global and other countries") +
+  facet_wrap(~ country, scales = "free")
+
+
+```
+
+
+
+
