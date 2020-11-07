@@ -1,8 +1,8 @@
 ---
-title: "Spotify-paper-2"
+title: "spotify_paper_script"
 author: "Pablo Bello"
-date: "7/21/2020"
-output: pdf_document
+date: "11/7/2020"
+output: html_document
 ---
 
 ```{r setup, include=FALSE}
@@ -44,33 +44,32 @@ library(countrycode)
 library(hrbrthemes)
 library(ggsci)
 library(scales)
+library(vroom)
 ```
+
 
 ```{r}
-####################
-####### DATA ######
-###################
+########################################
+####### DATA and general settings ######
+########################################
 
 #--- Itunes data
-load("~/Desktop/Spotify/paper-HSSC/itunes_data.RData")
+itunes <- vroom("itunes_data.csv.zip")
+
 #---Spotify charts data
-load("~/Desktop/Spotify/paper-HSSC/spotify_charts_paper.RData")
+spotify_charts <- vroom("spotify_data.csv.zip")
+
+#---Spotify features data
+spotify_features <- vroom("spotify_features_data.csv")
+
+#--- Pre-calculated z-diversity
+z_df <- vroom("zeta_data.csv")
 
 
-#---Filter countries with observations for the whole period
-countries_comp <- 
-  spotify_charts %>% 
-  group_by(country,date) %>% 
-  summarise (n = n(),.groups = 'drop_last') %>% 
-  summarise(start = as.Date(min(date)),
-             end = as.Date(max(date)), .groups = 'drop') %>% 
-  filter(start == as.Date("2017-01-01") & end == as.Date("2020-06-20")) %>% 
-  pull (country)
-
-
-spotify_charts %<>% filter(country != "Global" & country %in% countries_comp) 
-
+#--- Font Size for the paper
+fsp <- 24
 ```
+
 
 
 ```{r}
@@ -152,13 +151,13 @@ plot_beta <-
 ###################################################
 
 #--- Vector with the countries on each dataset
-itunes_countries <- itunes %>% distinct(country_id) %>% pull()
-spotify_countries <- spotify_charts %>% distinct(country_id) %>% pull()
+itunes_countries <- itunes %>% distinct(country) %>% pull()
+spotify_countries <- spotify_charts %>% distinct(country) %>% pull()
 intersection <- intersect(itunes_countries, spotify_countries)
 
 #--- Richness on Itunes 
 diversity_itunes <- itunes %>%
-  filter(country_id %in% spotify_countries) %>% #---Intersection of countries on both datasets
+  filter(country %in% spotify_countries) %>% #---Intersection of countries on both datasets
   group_by(date) %>% 
   summarise(unique = n_distinct(track), n = n(), .groups = 'drop') %>% 
   mutate(diversity = unique/n) 
@@ -166,9 +165,9 @@ diversity_itunes <- itunes %>%
 #--- Richness on Spotify 
 diversity_spotify <- 
   spotify_charts %>% 
-  filter(country_id %in% itunes_countries) %>% #---Intersection of countries on both datasets
+  filter(country %in% itunes_countries) %>% #---Intersection of countries on both datasets
   group_by(date) %>% 
-  summarise(unique = n_distinct(track_name), n = n(), .groups = 'drop') %>% 
+  summarise(unique = n_distinct(track_id), n = n(), .groups = 'drop') %>% 
   mutate(diversity = unique/n)
 
 
@@ -463,7 +462,7 @@ names(df_wide) <- dates
 
 jacc_index <- pblapply (df_wide, function(i){
   
-matrix <- philentropy::distance(i, method = "jaccard", use.row.names = TRUE,diag = FALSE,upper = FALSE)
+matrix <- suppressMessages(philentropy::distance(i, method = "jaccard", use.row.names = TRUE,diag = FALSE,upper = FALSE))
 df <- tibble(value = matrix[lower.tri(matrix)]) #---Extracting lower triangle from matrix(without diagonal)
 return(df)
 
@@ -549,9 +548,6 @@ share_tops <- tibble(date =  share_top200$date,
        top50 = share_top50$perc_big_labels,
        top10 = share_top10$perc_big_labels) %>% 
   pivot_longer(cols = -date, names_to = "top", values_to = "share")
-
-
-
 
 
 #--- Plot b
@@ -689,10 +685,7 @@ plot_clusters_labs <-  plot_clusters +
     segment.alpha = 0.7,
     size = 9,
     show.legend = FALSE) +
-  theme_figures_1 +
   theme(strip.text = element_text(size= fsp))
-
-save_plot(filename = "figure_2.png" , plot = plot_clusters_labs, base_height = 3.71*3)
 
 ```
 
@@ -703,79 +696,14 @@ save_plot(filename = "figure_2.png" , plot = plot_clusters_labs, base_height = 3
 ##### ZETA DIVERSITY #####
 ##########################
 
-############ MONTHLY CHARTS ############
-
-monthly <- 
-  spotify_charts %>% 
-  mutate(year = year(date) ,
-         month = month(date),
-          year_month = zoo::as.yearmon(paste(year, month), "%Y %m")) %>% 
-  group_by (year, month, country) %>% 
-  distinct(track_id)  %>% 
-  ungroup(country) %>% 
-  group_split(year_month)
-
-
-month_wide <- 
-  lapply(monthly, function(chart){
-    
-  chart_wide <- chart %>% 
-  mutate(n = 1) %>% 
-  pivot_wider(names_from = track_id, values_from = n) %>% 
-  select(-year,-month)
-
-df_wide <- setnafill(chart_wide[,-1], fill = 0) #--- Fill NAs with 0s
-df_wide <- as.data.frame(df_wide) #---Transform into dataframe to be able to include rownames
-rownames(df_wide) <- chart_wide$country #--- The rownames / ids
-
-return(df_wide)
-})
-
-
-
-#---Zeta Diversity 
-z_diversity <- pblapply (month_wide[c(1:30)], function (chart){
-  
-z <- Zeta.decline.ex(
-chart,
-orders = 1:20,
-sd.correct = TRUE,
-confint.level = 0.95,
-sd.plot = FALSE,
-rescale = TRUE,
-empty.row = "empty",
-plot = FALSE
-)
-})
-
-
-
-
-#---Tibble with zeta diversity results for all months put together
-df <- c()
-
-for (i in 1:length(z_diversity)) {
-
-  df[[i]] <- tibble (order = z_diversity[[i]]$zeta.order,
-                mean = z_diversity[[i]]$zeta.val,
-                sd = z_diversity[[i]]$zeta.val.sd,
-                month = i + 31
-                )
-}
-
-
-zeta_div <- bind_rows(df)
-
-
-
 #--- Plot
 
-#--- Log-log (again)
-figure_7 <- zeta_div %>%
+#--- Log-log
+plot_z <- z_df %>%
   filter(order != 1) %>%  #-- filter out zeta diversity of order 1
   ggplot(aes(order, mean, color = month, group = month)) +
-  geom_point () +
-  scale_color_viridis_c(breaks = c(1,13,25), labels = c('2017','2018','2019')) + 
+  geom_line () +
+  scale_color_viridis_c(breaks = c(1,13,25,37), labels = c('2017','2018','2019', '2020')) + 
   scale_y_log10 () +
   scale_x_log10(
     breaks = c(3,5,10,20),
@@ -785,114 +713,27 @@ figure_7 <- zeta_div %>%
         x = "Order",
         y = "Z-value") +
    theme_pubr() +
-  theme(plot.title = element_text(hjust = 0.5, size = 20),
-      axis.title.x = element_text(size = 20),
-       axis.title.y = element_text(size = 20),
-      legend.text = element_text(size = 15),
-      legend.title = element_text(size = 20)) +
-guides(color = guide_colourbar (direction = "horizontal", barwidth = 10 , barheight  = 0.7, title.vjust = 1))
+guides(color = guide_colourbar (direction = "horizontal", barwidth = 15 , barheight  = 0.7, title.vjust = 1))
 
 
   
-#--- Save figure
-save_plot(filename = "figure_7.png", figure_7, base_height = 3.71*2)
-
-
 #---Regression 
 zeta_div_reg <-
-  zeta_div %>% 
+  z_df %>% 
   mutate(log10_order = log10(order),
          log10_order = order - mean (order),
-         month = month - mean(month))
+         month = month - mean(month)) 
+  
          
 model_1 <- lm (formula = log10(mean) ~ log10_order + month + month*log10_order, data = zeta_div_reg )
 
-reg_table <- stargazer::stargazer(model_1, type = "html", out = "reg_table.html")
 reg_table_2 <- stargazer::stargazer(model_1,type = "latex", out ="reg_table.tex" )
 
 ```
 
 
 
-```{r}
 
-####################
-##### FIGURES #####
-###################
-
-###### THEME ###### 
-fsp <- 24
-
- 
-theme_figures_1 <- theme (axis.title.y = element_text(size= fsp),
-                                 legend.text = element_text(size=fsp),
-                                 axis.text.x = element_text(size = fsp),
-                                 axis.text.y = element_text(size = fsp))
-
-theme_figures_2 <- theme (axis.title.y = element_text(size= fsp),
-                                 legend.text = element_text(size=fsp),
-                                 axis.text.y = element_text(size = fsp),
-                                 axis.text.x = element_blank())
-
-
-#--- Figure 1
-figure_1 <- plot_alpha + theme_figures_1 + theme (axis.title.x = element_text(size = fsp))
-
-save_plot (filename = "figure_1.png" , figure_1, base_height = 3.71 * 2)
-
-#--- Figure 2 with text labels
-figure_2 <- plot_clusters + 
-  geom_text_repel(force = 0.5,segment.alpha = 0.7, size = 6) +
-  theme(strip.text = element_text(size=22),
-        legend.position = "none") 
-
-save_plot(filename = "figure_2.png", figure_2, base_height = 3.71*3)
-
-
-figure_3 <- plot_1 + labs(y = "Song Richness", title = "") + theme_figures_1
-save_plot(filename = "figure_3.png", figure_3, base_height = 3.71* 2)
-
-
-##############################################
-figure_4 <- plot_grid (
-  plot_beta + 
-    labs(y = "[%] Song Imports") +
-    theme_figures_2,
-  
-  plot_6 + 
-    labs (title = "" , 
-          y = expression(paste(beta, " Songs"))) + 
-    theme_figures_1,
-  
- 
-  nrow = 2,labels = "auto",label_fontface = "bold",label_size = fsp)
-
-save_plot(filename = "figure_4.png", figure_4,base_height = 3.71 * 3, base_asp = 1)
-
-
-##############################################
-figure_5 <- plot_grid (
-  plot_3 + 
-    labs (title = "" , y = "Artist Richness") + 
-    theme_figures_2, 
-  plot_4 + 
-    labs (title = "", y = "Label Richness") + 
-    theme_figures_1,
-  labels = "auto",label_fontface = "bold",label_size = fsp, nrow = 2)
-
-save_plot(filename = "figure_5.png", figure_5, base_height = 3.71 * 3,base_asp = 1)
-
-
-##############################################
-figure_6 <- plot_grid (
-  plot_5 + labs (title = "", y = "Gini Labels") + theme_figures_2,
-  plot_7_b + labs (title = "", y = "Market Share") + theme_figures_1,
-  labels = "auto",label_fontface = "bold",label_size = fsp, nrow = 2
-)
-
-save_plot(filename = "figure_6.png", figure_3_d, base_height = 3.71 * 3,base_asp = 1)
-
-```
 
 
 ```{r}
@@ -900,9 +741,6 @@ save_plot(filename = "figure_6.png", figure_3_d, base_height = 3.71 * 3,base_asp
 ####### FEATURE-BASED DISTANCE ######
 #####################################
 
-load("~/Desktop/Spotify/paper-HSSC/spotify_features.RData")
-
-spotify_features %<>% filter(country %in% countries_comp) 
 
 #--- Dividing the tibble by days 
 days <- 
@@ -946,19 +784,111 @@ christmas <- c("2017-12-25", "2018-12-25","2019-12-25")
 
 
 
-figure_8 <- euclidean_df %>% 
+plot_e <- euclidean_df %>% 
 mutate (mean = rollmean(x = mean, k = 10,  fill = NA)) %>%
 ggplot(aes(date, mean))+
   geom_line() +  
-  #geom_ribbon(aes(ymax = mean + se , ymin = mean - se), alpha = 0.6) +
   geom_vline(xintercept = as.Date(christmas), color = "red") +
   labs (y = "Mean Euclidean Distance",
     x = "") +
-  theme_pubr() +
-  theme_figures_1
-  
+  theme_pubr()
 
-save_plot(filename = "figure_8.png", figure_8, base_height = 3.71* 2)
+
+```
+
+
+```{r}
+
+####################
+##### FIGURES #####
+###################
+
+###### THEMES for the figures ######
+
+#--- For figures with both axes
+theme_figures_1 <- theme (axis.title.y = element_text(size= fsp),
+                                 legend.text = element_text(size=fsp),
+                                 axis.text.x = element_text(size = fsp),
+                                 axis.text.y = element_text(size = fsp))
+
+#--- For figures with just the y-axis
+theme_figures_2 <- theme (axis.title.y = element_text(size= fsp),
+                                 legend.text = element_text(size=fsp),
+                                 axis.text.y = element_text(size = fsp),
+                                 axis.text.x = element_blank())
+
+##############################################
+figure_1 <- plot_alpha + theme_figures_1 + theme (axis.title.x = element_text(size = fsp))
+
+save_plot (filename = "figure_1.png" , figure_1, base_height = 3.71*2)
+
+
+##############################################
+figure_2 <- plot_clusters_labs + theme_figures_1
+
+save_plot(filename = "figure_2.png" , plot = figure_2, base_height = 3.71*3)
+
+
+##############################################
+figure_3 <- plot_1 + labs(y = "Song Richness", title = "") + theme_figures_1
+save_plot(filename = "figure_3.png", figure_3, base_height = 3.71*2)
+
+
+##############################################
+figure_4 <- plot_grid (
+  plot_beta + 
+    labs(y = "[%] Song Imports") +
+    theme_figures_2,
+  
+  plot_6 + 
+    labs (title = "" , 
+          y = expression(paste(beta, " Songs"))) + 
+    theme_figures_1,
+  
+ 
+  nrow = 2,labels = "auto",label_fontface = "bold",label_size = fsp)
+
+save_plot(filename = "figure_4.png", figure_4,base_height = 3.71*3, base_asp = 1)
+
+
+##############################################
+figure_5 <- plot_grid (
+  plot_3 + 
+    labs (title = "" , y = "Artist Richness") + 
+    theme_figures_2, 
+  plot_4 + 
+    labs (title = "", y = "Label Richness") + 
+    theme_figures_1,
+  labels = "auto",label_fontface = "bold",label_size = fsp, nrow = 2)
+
+save_plot(filename = "figure_5.png", figure_5, base_height = 3.71*3,base_asp = 1)
+
+
+##############################################
+figure_6 <- plot_grid (
+  plot_5 + labs (title = "", y = "Gini Labels") + theme_figures_2,
+  plot_7_b + labs (title = "", y = "Market Share") + theme_figures_1,
+  labels = "auto",label_fontface = "bold",label_size = fsp, nrow = 2
+)
+
+save_plot(filename = "figure_6.png", figure_6, base_height = 3.71*3,base_asp = 1)
+
+##############################################
+figure_7 <- plot_z + 
+  theme (axis.title.y = element_text(size= fsp),
+         axis.title.x = element_text(size = fsp),
+         legend.text = element_text(size= 15),
+         legend.title = element_text(size = fsp),
+         axis.text.x = element_text(size = fsp),
+         axis.text.y = element_text(size = fsp))
+
+save_plot(filename = "figure_7.png", figure_7, base_height = 3.71*2)
+
+
+##############################################
+figure_8 <- plot_e +  theme_figures_1
+save_plot(filename = "figure_8.png", figure_8, base_height = 3.71*2)
+
 
 ```
 
@@ -974,11 +904,6 @@ ratios <-
   summarise(songs = n_distinct(track_id), artists = n_distinct(artist), labels = n_distinct(label_1)) %>% 
   mutate(s_a = songs / artists , s_l = songs / labels , a_l = artists / labels) %>% 
   select(-songs, -artists , -labels)
-
-
-
-
-
 
 ```
 
