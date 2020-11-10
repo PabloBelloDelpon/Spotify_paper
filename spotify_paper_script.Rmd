@@ -197,9 +197,9 @@ plot_1 <-
 
 
 ```{r}
-#####################################################################
-####### DIVERSITY OF SONGS ON SPOTIFY (ALL COUNTRIES) ###############
-#####################################################################
+######################################################
+####### DIVERSITY OF SONGS ON SPOTIFY  ###############
+######################################################
 
 #--- Diversity of songs
 div_top200 <- spotify_charts %>%
@@ -247,9 +247,9 @@ ggplot(aes(date,diversity, color = top))+
 
 
 ``` {r}
-#####################################################################
-####### DIVERSITY OF ARTISTS ON SPOTIFY (ALL COUNTRIES) #############
-#####################################################################
+######################################################
+####### DIVERSITY OF ARTISTS ON SPOTIFY  #############
+######################################################
 
 #--- Diversity of artists top 200
 art_top200 <- spotify_charts %>%
@@ -301,9 +301,9 @@ ggplot(aes(date,diversity, color = top))+
 ```
 
 ``` {r}
-#####################################################################
-####### DIVERSITY OF LABELS ON SPOTIFY (ALL COUNTRIES) #############
-#####################################################################
+##############################################
+####### DIVERSITY OF LABELS ON SPOTIFY #######
+#############################################
 
 #--- Diversity of labels top 200
 lab_top200 <- spotify_charts %>%
@@ -436,9 +436,6 @@ chart_wide <- chart %>%
 
 
 
-#days_okay <- which(sapply(daily_charts_wide, function(i) class(i[1,2]) == "numeric"))
-#days_issue <- which(sapply(daily_charts_wide, function(i) i[1,2] != 1)) #--- There are three days in which by a mistake on the charts a song is appears more than once on the same list. I remove those days.
-
 df_wide <- pblapply(daily_charts_wide , function (chart_wide){
 
 df_wide <- setnafill(chart_wide[,-1], fill = 0) #--- Fill NAs with 0s
@@ -569,8 +566,6 @@ plot_7_b <-
   theme_pubr (legend =c(0.8,0.5)) +
   scale_colour_brewer(palette = "Set1") +
   theme(plot.title = element_text(hjust = 0.5))
-
- 
 
 ```
 
@@ -789,7 +784,7 @@ mutate (mean = rollmean(x = mean, k = 10,  fill = NA)) %>%
 ggplot(aes(date, mean))+
   geom_line() +  
   geom_vline(xintercept = as.Date(christmas), color = "red") +
-  labs (y = "Mean Euclidean Distance",
+  labs (y = "Mean euclidean distance",
     x = "") +
   theme_pubr()
 
@@ -830,19 +825,19 @@ save_plot(filename = "figure_2.png" , plot = figure_2, base_height = 3.71*3)
 
 
 ##############################################
-figure_3 <- plot_1 + labs(y = "Song Richness", title = "") + theme_figures_1
+figure_3 <- plot_1 + labs(y = "Song richness", title = "") + theme_figures_1
 save_plot(filename = "figure_3.png", figure_3, base_height = 3.71*2)
 
 
 ##############################################
 figure_4 <- plot_grid (
   plot_beta + 
-    labs(y = "[%] Song Imports") +
+    labs(y = "[%] Song imports") +
     theme_figures_2,
   
   plot_6 + 
     labs (title = "" , 
-          y = expression(paste(beta, " Songs"))) + 
+          y = expression(paste(beta, " songs"))) + 
     theme_figures_1,
   
  
@@ -854,10 +849,10 @@ save_plot(filename = "figure_4.png", figure_4,base_height = 3.71*3, base_asp = 1
 ##############################################
 figure_5 <- plot_grid (
   plot_3 + 
-    labs (title = "" , y = "Artist Richness") + 
+    labs (title = "" , y = "Artist richness") + 
     theme_figures_2, 
   plot_4 + 
-    labs (title = "", y = "Label Richness") + 
+    labs (title = "", y = "Label richness") + 
     theme_figures_1,
   labels = "auto",label_fontface = "bold",label_size = fsp, nrow = 2)
 
@@ -866,8 +861,8 @@ save_plot(filename = "figure_5.png", figure_5, base_height = 3.71*3,base_asp = 1
 
 ##############################################
 figure_6 <- plot_grid (
-  plot_5 + labs (title = "", y = "Gini Labels") + theme_figures_2,
-  plot_7_b + labs (title = "", y = "Market Share") + theme_figures_1,
+  plot_5 + labs (title = "", y = "Gini labels") + theme_figures_2,
+  plot_7_b + labs (title = "", y = "Market share") + theme_figures_1,
   labels = "auto",label_fontface = "bold",label_size = fsp, nrow = 2
 )
 
